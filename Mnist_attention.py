@@ -43,7 +43,7 @@ def train(epoch, optimizer, train_loader, model, apply_func):
         data, target = apply_func(data).cuda(), target.cuda()
         data, target = Variable(data), Variable(target)
         optimizer.zero_grad()
-        output, attentioned, feature_map = model(data)
+        output, image_new, att_params = model(data)
         loss = F.nll_loss(output, target)
         loss.backward()
         optimizer.step()
@@ -51,12 +51,10 @@ def train(epoch, optimizer, train_loader, model, apply_func):
             print('Train Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.6f}'.format(
                 epoch, batch_idx * len(data), len(train_loader.dataset),
                 100. * batch_idx / len(train_loader), loss.data[0]))
-            B, C, Y, X = feature_map.size()
-            softmap = torch.nn.functional.softmax(feature_map.view(B, C, -1), dim=-1).view(B, C, Y, X)
-            draw_rect(list(map(lambda x: x.data.cpu().numpy()[0, 0], (data, feature_map, softmap, attentioned))), *map(lambda a: a[0, 0], model.attention.last_attention_params), set_timer=True)
-        # break
 
-def resize(images, out_size, scale_min=0.4, scale_max=0.8):
+            draw_rect(list(map(lambda x: x.data.cpu().numpy()[0, 0], (data, image_new))), *map(lambda a: a[0, 0], att_params), set_timer=True)
+
+def resize(images, out_size, scale_min=0.3, scale_max=0.8):
     """
     Scales the images randomly with a constant which is defined between [0.3, 0.8].
     Scaled image is randomly postioned in empty output image.
@@ -104,18 +102,17 @@ class Net(torch.nn.Module):
     def forward(self, image):
         feature_map = F.relu(self.conv_att_1(image))
         feature_map = self.conv_att_2(feature_map)
-        # feature_map = self.batchnorm2d_att(feature_map)
 
-        x = self.attention(image, feature_map)
-        xx = torch.squeeze(x, 2)
+        x, attention_params = self.attention(image, feature_map)
+        transformed_image = torch.squeeze(x, 2)
 
-        x = F.relu(F.max_pool2d(self.conv1(xx), 2))
+        x = F.relu(F.max_pool2d(self.conv1(transformed_image), 2))
         x = F.relu(F.max_pool2d((self.conv2(x)), 2))
         x = x.view(-1, 320)
         x = F.relu(self.fc1(x))
-        # x = F.dropout(x, training=self.training)
+        x = F.dropout(x, training=self.training)
         x = self.fc2(x)
-        return F.log_softmax(x, dim=1), xx, feature_map
+        return F.log_softmax(x, dim=1), transformed_image, attention_params
 
 if __name__ == "__main__":
 
@@ -130,14 +127,10 @@ if __name__ == "__main__":
     model.cuda()
     optimizer = torch.optim.Adam(model.parameters(), lr=0.01)
     for epoch in range(1, 3+ 1):
-        train(epoch, optimizer, train_data, model, lambda image: resize(image, (60, 60)))
+        train(epoch, optimizer, train_data, model, lambda image: resize(image, (90, 90)))
 
-    # print(model.attention.y_index)
-    # print(model.attention.conv_layers[-1].weight.grad)  
-    mean_x, mean_y, scale = (model.attention.last_attention_params)
-    print(mean_x)
-    print(mean_y)
-    print(scale)
+
+
     
 
     

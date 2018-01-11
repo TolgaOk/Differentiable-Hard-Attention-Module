@@ -34,8 +34,8 @@ def expected_value(density):
     return (density.sum(-2)*x_indexes).sum(-1), (density.sum(-1)*y_indexes).sum(-1)
 
 
-def standart_deviation(density):
-    """ Returns the standart deviation for last 2 dimensions
+def expected_norm(density):
+    """ Returns the expected l2 norm for last 2 dimensions
      for given 4D density function.
     """
     B, C, Y, X = density.size()    
@@ -51,19 +51,4 @@ def standart_deviation(density):
     return (norm_4d*density).sum(-1).sum(-1)
 
 
-if __name__ == "__main__":
-    B, C, Y, X = 1, 1, 6, 6
-    vect_x = Variable(torch.linspace(-1, 1, Y).cuda())
-    vect_y = Variable(torch.linspace(-1, 1, X).cuda())
-    soft_max = Softmax(-1)
-
-    XX, YY = mesh_2d(vect_x, vect_y)
-    density_original = Variable(torch.normal(torch.zeros(1, 1, 6, 6), torch.ones(1, 1, 6, 6)).cuda(), requires_grad=True)
-    density = softmax(density_original.view(B, C, -1), dim=-1).view(B, C ,Y, X)
-    Ex, Ey = expected_value(density)
-    S = standart_deviation(density)
-    
-    S.backward(torch.ones(1, 1).cuda())
-    
-    print(density_original.grad)
     
