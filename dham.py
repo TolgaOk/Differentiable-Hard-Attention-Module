@@ -57,10 +57,10 @@ class Dham(Module):
         difference_y = (grid_y - torch.unsqueeze(mean_y, -1)).view(B, C, Y, 1).detach()
         
         # Expected L2 norm
-        # scale = ((difference_x.pow(2) + difference_y.pow(2)).sqrt()*softmaxed_map).sum(-1).sum(-1)
+        scale = ((difference_x.pow(2) + difference_y.pow(2)).sqrt()*softmaxed_map).sum(-1).sum(-1)
 
         #Expected L1 norm
-        scale = ((torch.abs(difference_x) + torch.abs(difference_y))*softmaxed_map).sum(-1).sum(-1)        
+        # scale = ((torch.abs(difference_x) + torch.abs(difference_y))*softmaxed_map).sum(-1).sum(-1)        
 
         self.last_attention_params = (mean_x, mean_y, scale*scale_factor) 
         return mean_x, mean_y, scale*scale_factor
@@ -85,8 +85,8 @@ class Dham(Module):
         y_raw_ind, x_raw_ind = raw_ind
         B, C, Y, X = input.size()
 
-        y_raw_ind = (y_raw_ind + 1)*(Y/2)
-        x_raw_ind = (x_raw_ind + 1)*(X/2)
+        y_raw_ind = ((y_raw_ind + 1)*(Y/2)).clamp(0, X-1)
+        x_raw_ind = ((x_raw_ind + 1)*(X/2)).clamp(0, X-1)
 
         x_u = Variable(torch.ceil(x_raw_ind).clamp(0, X-1).data)
         y_u = Variable(torch.ceil(y_raw_ind).clamp(0, Y-1).data)

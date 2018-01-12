@@ -7,32 +7,39 @@ from torchvision import datasets, transforms
 import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
+import matplotlib.gridspec as gridspec
 
 from dham import Dham
 
-def draw_rect(images_tuple, x, y, scale, set_timer=True):    
+def show_attention(images, params, cmap="PuBu_r"):    
+    assert len(images) == 2, "Parameter <images> must be a tuple of two torch tensors"
+    org_imgs, att_imgs = [torch_img.data.cpu().numpy()[:, 0] for torch_img in images]
+    params = [torch_param.data.cpu().numpy()[:, 0] for torch_param in params]
 
-    num_img = len(images_tuple)
-    fig, axs = plt.subplots(1, num_img)
+    rows = org_imgs.shape[0]//2
+    plt.figure(figsize=(rows*2, 8))
+    G = gridspec.GridSpec(rows, 4)
+    # G.update(wspace=0.05, hspace=0.005)
 
-    def close_event():
-        plt.close() #timer calls this function after 3 seconds and closes the window 
+    for row in range(rows):
+        for i in range(2):
+            axes = plt.subplot(G[row, i*2])
+            plt.xticks(())
+            plt.yticks(())
+            axes.imshow(org_imgs[2*row+i], cmap=cmap)
+            Y, X = org_imgs[2*row+i].shape
+            x, y, scale = [param[2*row+i] for param in params]
+            A, B, C, D = map(int, [(x+1)*X/2, (y+1)*Y/2, X*scale, Y*scale])
+            rect = patches.Rectangle((-C//2 + A, -D//2 + B), C, D, linewidth=2, edgecolor='r', facecolor='none')
+            axes.add_patch(rect)
 
-    timer = fig.canvas.new_timer(interval = 5000) #creating a timer object and setting an interval of 3000 milliseconds
-    timer.add_callback(close_event)
+            axes = plt.subplot(G[row, i*2+1])
+            axes.imshow(att_imgs[2*row+i], cmap=cmap)
+            plt.xticks(())
+            plt.yticks(())
 
-    axs[0].imshow(images_tuple[0], cmap="PuBu_r")
-    Y, X = images_tuple[0].shape
-    A, B, C, D = map(int, [(x+1)*X/2, (y+1)*Y/2, X*scale, Y*scale])
-
-    rect = patches.Rectangle((-C//2 + A, -D//2 + B), C, D, linewidth=2, edgecolor='r', facecolor='none')
-    axs[0].add_patch(rect)
-
-    for ax, img in zip(axs[1:], images_tuple[1:]):
-        ax.imshow(img, cmap="PuBu_r")
-    
-    if set_timer:
-        timer.start()
+    # plt.tight_layout()
+    plt.subplots_adjust(wspace=0, hspace=0)
     plt.show()
 
 
@@ -47,14 +54,15 @@ def train(epoch, optimizer, train_loader, model, apply_func):
         loss = F.nll_loss(output, target)
         loss.backward()
         optimizer.step()
-        if batch_idx % 50 == 0:
+        if batch_idx % 100 == 0:
             print('Train Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.6f}'.format(
                 epoch, batch_idx * len(data), len(train_loader.dataset),
                 100. * batch_idx / len(train_loader), loss.data[0]))
+    show_attention((data[:8], image_new[:8]), att_params[:8])
+            
 
-            draw_rect(list(map(lambda x: x.data.cpu().numpy()[0, 0], (data, image_new))), *map(lambda a: a[0, 0], att_params), set_timer=True)
 
-def resize(images, out_size, scale_min=0.3, scale_max=0.8):
+def resize(images, out_size, scale_min=0.24, scale_max=0.4):
     """
     Scales the images randomly with a constant which is defined between [0.3, 0.8].
     Scaled image is randomly postioned in empty output image.
@@ -67,7 +75,8 @@ def resize(images, out_size, scale_min=0.3, scale_max=0.8):
     B, C, Y, X = images.size()
     y, x = out_size
 
-    out_tensor = torch.zeros(B, C, y, x)+background
+    # out_tensor = torch.zeros(B, C, y, x)+background
+    out_tensor = torch.normal(torch.zeros(B, C, y, x), torch.ones(B, C, y, x)*0.5) + background
 
     for b in range(B):
         scale = np.random.uniform(scale_min, scale_max)
@@ -80,15 +89,17 @@ def resize(images, out_size, scale_min=0.3, scale_max=0.8):
         indx = np.tile(indx.astype(np.int32), (C, y_, 1))
         indc = np.tile(np.arange(C).astype(np.int32).reshape(-1, 1, 1), (1, y_, x_))
 
-        out_tensor[b, :,  y_offset:y_+y_offset, x_offset:x_+x_offset] = images[b][indc, indy, indx]
+        mask = images[b][indc, indy, indx].gt(background).float()
+        out_tensor[b, :,  y_offset:y_+y_offset, x_offset:x_+x_offset].mul_(1-mask)
+        out_tensor[b, :,  y_offset:y_+y_offset, x_offset:x_+x_offset].add_(images[b][indc, indy, indx].mul_(mask))
 
     return out_tensor
 
 class Net(torch.nn.Module):
     def __init__(self):
         super(Net, self).__init__()
-        self.conv_att_1 = nn.Conv2d(1, 16, kernel_size=3)
-        self.conv_att_2 = nn.Conv2d(16, 1, kernel_size=3)
+        self.conv_att_1 = nn.Conv2d(1, 48, kernel_size=5)
+        self.conv_att_2 = nn.Conv2d(48, 1, kernel_size=5)
         self.batchnorm2d_att = nn.BatchNorm2d(1)
 
         self.attention = Dham((28, 28))
@@ -102,6 +113,7 @@ class Net(torch.nn.Module):
     def forward(self, image):
         feature_map = F.relu(self.conv_att_1(image))
         feature_map = self.conv_att_2(feature_map)
+        feature_map = self.batchnorm2d_att(feature_map)
 
         x, attention_params = self.attention(image, feature_map)
         transformed_image = torch.squeeze(x, 2)
@@ -126,8 +138,8 @@ if __name__ == "__main__":
     model = Net()
     model.cuda()
     optimizer = torch.optim.Adam(model.parameters(), lr=0.01)
-    for epoch in range(1, 3+ 1):
-        train(epoch, optimizer, train_data, model, lambda image: resize(image, (90, 90)))
+    for epoch in range(1, 1 + 1):
+        train(epoch, optimizer, train_data, model, lambda image: resize(image, (120, 120)))
 
 
 
