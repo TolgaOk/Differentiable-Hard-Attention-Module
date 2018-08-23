@@ -85,7 +85,7 @@ class Dham(Module):
         y_raw_ind, x_raw_ind = raw_ind
         B, C, Y, X = input.size()
 
-        y_raw_ind = ((y_raw_ind + 1)*(Y/2)).clamp(0, X-1)
+        y_raw_ind = ((y_raw_ind + 1)*(Y/2)).clamp(0, Y-1)
         x_raw_ind = ((x_raw_ind + 1)*(X/2)).clamp(0, X-1)
 
         x_u = Variable(torch.ceil(x_raw_ind).clamp(0, X-1).data)
